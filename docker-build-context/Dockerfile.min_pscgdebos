@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.6
+FROM ubuntu:plucky
+
+ARG hostname=pscg-dockmount	# hmm in docker it will be overwritten with an /etc/hostname mount but let us put this to a test
+
+ENV DEBIAN_FRONTEND=noninteractive 
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update
+
+# debootstrap equivalent
+RUN <<DOCKEOF
+	apt-get install -y  \
+		kmod            \
+		udev            \
+		iproute2        \
+		iw              \
+		wpasupplicant   \
+		iputils-ping    \
+		isc-dhcp-common \
+		isc-dhcp-client \
+		openssh-server \
+		ssh \
+		systemd \
+		less \
+		net-tools  \
+		vim \
+		parted dosfstools \
+		wget \
+		xz-utils
+
+	apt-get remove -y exim4-base exim4-config liblockfile-bin liblockfile1 
+	
+	if [ -f /etc/cron.daily/logrotate ] ; then 
+		mv /etc/cron.daily/logrotate /etc/cron.hourly/logrotate
+	fi
+	
+	# please select either password for enabling ssh access (and then also do not select --network=host) or no password
+	#echo -e "thepscg.com\nthepscg.com\n" | passwd root
+	passwd -d root
+	echo VERSION="docker-with-bind-mounts" > /etc/thepscgos-release
+	
+DOCKEOF
+
+RUN <<DOCKEOF
+#!/bin/bash
+cat << "EOF" | tee ${ROOTFS_DIR}/etc/motd
+pscg-dockos-richosonly
+EOF
+
+cat << EOF | tee ${ROOTFS_DIR}/etc/ssh/sshd_config
+Port 22
+PermitRootLogin yes
+ChallengeResponseAuthentication no
+UsePAM yes
+X11Forwarding yes
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem       sftp    /usr/lib/openssh/sftp-server
+EOF
+DOCKEOF
+	
+# postfs fixes
+RUN <<DOCKEOF
+	if [ -f /etc/selinux/config ] ;then
+		sed -i '/^SELINUX/s/=.*$/=disabled/' /etc/selinux/config;
+	fi ;
+	# There used to be an issue with it with MacOS in the past - can't test it now, it is not needed for Linux so it is commented out
+	# echo "Disabling MacOS docker default console" ; \
+	# chmod -x /lib/systemd/system-generators/systemd-getty-generator
+DOCKEOF
+
+# Add OTA if you want to - but note that this is mostly a demonstration. It can serve as an example for adding overlays.
+# I could modify the overlay-install-instruction.sh to account for this kind of docker, it's easy, but I don't think I will have the time
+# Plus - docker itself does not reboot, it's not an emulator, and we don't run the ramdisk logic, so most of the things demonstrated there are as comprehensive as with, e.g.
+# the emulators or the pscg-dockos-rd (which runs the ramdisk as well)  so changing more code for that, is not recommended.
+COPY contextdirs/opt /opt
+COPY contextdirs/etc /etc
+
+RUN systemctl enable ota

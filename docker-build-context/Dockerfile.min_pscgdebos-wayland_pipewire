@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1.6
+FROM pscg-dockos-richosonly-noav
+
+# Wayland stuff - @see https://github.com/ronpscg/wayland-dockers/blob/master/Dockerfile.wayland-client-glmark2-tests
+RUN <<DOCKEOF
+#!/bin/bash
+apt-get install -y --no-install-recommends \
+    libwayland-egl1 \
+    glmark2-wayland glmark2-es2-wayland \
+    libgl1-mesa-dri \
+    glmark2-wayland libgl1 libegl1 libgles2 strace
+DOCKEOF
+
+# Pipewire stuff. Adds support for audio playback and recording. Can also provide screen/camera capture, but 
+# that requires either ffmpeg/gstreamer or quite a lot of explanations, so it is not present here
+RUN <<DOCKEOF
+#!/bin/bash
+apt-get install --no-install-recommends -y pipewire
+DOCKEOF
+
+# Overriding systemd clearning environemnt variables (and remounting tmp)
+RUN <<DOCKEOF
+cat << "EOF" | tee ${ROOTFS_DIR}/etc/profile.d/11-workaround-systemd-docker-environment-variable-clearing.sh
+for tuple in $(cat /proc/1/environ | tr '\0' '\n') ; do case $tuple in XDG_RUNTIME_DIR=*|WAYLAND_DISPLAY=*|DISPLAY=*) export $tuple ;; esac ; done
+EOF
+DOCKEOF
+
